@@ -4,6 +4,7 @@ import random
 import shutil
 import time
 import warnings
+import csv
 
 import torch
 import torch.nn as nn
@@ -54,6 +55,8 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
+parser.add_argument('--sc', '--save-csv', dest='b_savecsv', action='store_true',
+                    help='save predictions csv after validation works only on evaluate mode')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 parser.add_argument('--world-size', default=-1, type=int,
@@ -302,6 +305,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
 
 def validate(val_loader, model, criterion, args):
+
+    predictionssavehelper = None
+    targetsavehelper = None
+    if args.b_savecsv:
+        predictionssavehelper = CSVSaveHelper('predictions.csv')
+        targetsavehelper = CSVSaveHelper('target.csv')
+
+
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -331,6 +342,12 @@ def validate(val_loader, model, criterion, args):
             top1.update(acc1[0], images.size(0))
             top5.update(acc5[0], images.size(0))
 
+            if predictionssavehelper != None:
+                _, pred = output.topk(1, 1, True, True)
+                predictionssavehelper.write(pred.cpu().numpy())
+                targetsavehelper.write(target.view(1, -1).expand_as(pred.t()).t().cpu().numpy())
+
+
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
@@ -341,6 +358,11 @@ def validate(val_loader, model, criterion, args):
         # TODO: this should also be done with the ProgressMeter
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
+
+    if predictionssavehelper != None:
+        predictionssavehelper.close()
+        targetsavehelper.close()
+    
 
     return top1.avg
 
@@ -374,6 +396,17 @@ class AverageMeter(object):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
 
+class CSVSaveHelper(object):
+    """ Accumulates and finally saves csv """
+    def __init__(self, filename):
+        self.csvfile = open(filename, 'w')
+        self.csvwriter = csv.writer(self.csvfile)
+    
+    def write(self, new_rows):
+        self.csvwriter.writerows(new_rows)
+    
+    def close(self):
+        self.csvfile.close()
 
 class ProgressMeter(object):
     def __init__(self, num_batches, meters, prefix=""):
