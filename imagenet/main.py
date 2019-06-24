@@ -308,7 +308,7 @@ def validate(val_loader, model, criterion, args):
 
     predictionssavehelper = None
     if args.b_savecsv:
-        predictionssavehelper = CSVSaveHelper('predictions.csv', val_loader.dataset.class_to_idx)
+        predictionssavehelper = ResultsSinkHelper('predictions.csv', val_loader.dataset.class_to_idx)
   
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -355,18 +355,7 @@ def validate(val_loader, model, criterion, args):
               .format(top1=top1, top5=top5))
 
     if predictionssavehelper != None:
-        predictionssavehelper.close()
-            
-    # convert index to label name 
-    # correct classifications - make a folder called correct
-    # misclassifications - make a folder called wrong
-    # make a directory with actual classification
-    # make a directory with predicted classification
-
-    # make a directory with predicted classification
-    # make a directory with actual classification
-    # copy the image to the folder
-    
+        predictionssavehelper.close()                   
 
     return top1.avg
 
@@ -415,7 +404,7 @@ class AverageMeter(object):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
 
-class CSVSaveHelper(object):
+class ResultsSinkHelper(object):
     """ Accumulates and finally saves csv """
     def __init__(self, filename, class_to_idx):
         self.csvfile = open(filename, 'w')
@@ -423,10 +412,37 @@ class CSVSaveHelper(object):
         self.index_to_class = {}
         for index, label_name in enumerate(class_to_idx):
             self.index_to_class[index] = label_name
+        
+        self.predicted_actual = os.path.join(args.data, 'predicted_actual')
+        self.actual_predicted = os.path.join(args.data, 'actual_predicted')
+
+        if os.path.exists(self.predicted_actual):
+            shutil.rmtree(self.predicted_actual)
+
+        if os.path.exists(self.actual_predicted):
+            shutil.rmtree(self.actual_predicted)
+
+        os.mkdir(self.predicted_actual)
+        os.mkdir(self.actual_predicted)    
     
     def write(self, predicted_rows, target_rows, paths):
         for index, row in enumerate(predicted_rows):
-            self.csvwriter.writerow([paths[index], self.index_to_class[row[0]], self.index_to_class[target_rows[index][0]]])
+            predicted_label = self.index_to_class[row[0]]
+            actual_label = self.index_to_class[target_rows[index][0]]
+            img_path = paths[index].replace(' ', '')
+            self.csvwriter.writerow([img_path, predicted_label, actual_label])
+            
+            predicted_actual_path = os.path.join(self.predicted_actual, predicted_label, actual_label)
+            actual_predicted_path = os.path.join(self.actual_predicted, actual_label, predicted_label)
+
+            if not os.path.exists(predicted_actual_path):
+                os.makedirs(predicted_actual_path)
+            
+            if not os.path.exists(actual_predicted_path):
+                os.makedirs(actual_predicted_path)
+            
+            shutil.copyfile(img_path, os.path.join(predicted_actual_path, os.path.basename(img_path)))
+            shutil.copyfile(img_path, os.path.join(actual_predicted_path, os.path.basename(img_path)))
     
     def close(self):
         self.csvfile.close()
