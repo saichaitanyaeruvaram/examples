@@ -219,7 +219,7 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
+        ImageFolderWithPaths(valdir, transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
@@ -307,12 +307,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 def validate(val_loader, model, criterion, args):
 
     predictionssavehelper = None
-    targetsavehelper = None
     if args.b_savecsv:
-        predictionssavehelper = CSVSaveHelper('predictions.csv')
-        targetsavehelper = CSVSaveHelper('target.csv')
-
-
+        predictionssavehelper = CSVSaveHelper('predictions.csv', val_loader.dataset.class_to_idx)
+  
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -327,7 +324,7 @@ def validate(val_loader, model, criterion, args):
 
     with torch.no_grad():
         end = time.time()
-        for i, (images, target) in enumerate(val_loader):
+        for i, (images, target, paths) in enumerate(val_loader):
             if args.gpu is not None:
                 images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
@@ -344,9 +341,7 @@ def validate(val_loader, model, criterion, args):
 
             if predictionssavehelper != None:
                 _, pred = output.topk(1, 1, True, True)
-                predictionssavehelper.write(pred.cpu().numpy())
-                targetsavehelper.write(target.view(1, -1).expand_as(pred.t()).t().cpu().numpy())
-
+                predictionssavehelper.write(pred.cpu().numpy(), target.view(1, -1).expand_as(pred.t()).t().cpu().numpy(), paths)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -361,7 +356,16 @@ def validate(val_loader, model, criterion, args):
 
     if predictionssavehelper != None:
         predictionssavehelper.close()
-        targetsavehelper.close()
+            
+    # convert index to label name 
+    # correct classifications - make a folder called correct
+    # misclassifications - make a folder called wrong
+    # make a directory with actual classification
+    # make a directory with predicted classification
+
+    # make a directory with predicted classification
+    # make a directory with actual classification
+    # copy the image to the folder
     
 
     return top1.avg
@@ -372,6 +376,21 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')
 
+
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """Custom dataset that includes image file paths. Extends
+    torchvision.datasets.ImageFolder
+    """
+
+    # override the __getitem__ method. this is the method dataloader calls
+    def __getitem__(self, index):
+        # this is what ImageFolder normally returns 
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # the image file path
+        path = self.imgs[index][0]
+        # make a new tuple that includes original and the path
+        tuple_with_path = (original_tuple + (path,))
+        return tuple_with_path
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -398,12 +417,16 @@ class AverageMeter(object):
 
 class CSVSaveHelper(object):
     """ Accumulates and finally saves csv """
-    def __init__(self, filename):
+    def __init__(self, filename, class_to_idx):
         self.csvfile = open(filename, 'w')
         self.csvwriter = csv.writer(self.csvfile)
+        self.index_to_class = {}
+        for index, label_name in enumerate(class_to_idx):
+            self.index_to_class[index] = label_name
     
-    def write(self, new_rows):
-        self.csvwriter.writerows(new_rows)
+    def write(self, predicted_rows, target_rows, paths):
+        for index, row in enumerate(predicted_rows):
+            self.csvwriter.writerow([paths[index], self.index_to_class[row[0]], self.index_to_class[target_rows[index][0]]])
     
     def close(self):
         self.csvfile.close()
