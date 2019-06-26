@@ -490,3 +490,7 @@ def accuracy(output, target, topk=(1,)):
 
 if __name__ == '__main__':
     main()
+
+# python3 main.py -a resnet152 /mnt/disks/d1/s/data/apra/tempdatasets/june21 --batch-size 16
+# python3 main.py -a resnet152 /mnt/disks/d1/s/data/apra/tempdatasets/june21 --resume resnet152pretrainedmodels/model_best.pth.tar --evaluate --save-csv
+# python3 main.py -a resnet152 /mnt/disks/d1/s/data/apra/tempdatasets/june21 --resume resnet152pretrainedmodels/model_best.pth.tar --test
